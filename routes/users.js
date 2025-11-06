@@ -15,7 +15,7 @@ module.exports = function (router) {
                     if (err) {
                         return res.status(500).json({message: 'server error', data: null});
                     }
-                    return res.status(200).json({message: 'success', data: null});
+                    return res.status(200).json({message: 'success', data: count });
                 });
                 return
             }
@@ -28,7 +28,7 @@ module.exports = function (router) {
                 if (err) {
                     return res.status(500).json({message: 'server error', data: null});
                 }
-                return res.status(200).json({message: 'success', data: null});
+                return res.status(200).json({message: 'success', data: docs });
             });
         })
         .post(function (req, res) {
@@ -49,7 +49,7 @@ module.exports = function (router) {
                     if (err) {
                         return res.status(500).json({message: 'server error', data: null});
                     }
-                    return res.status(201).json({message: 'user created', data: saved});
+                    return res.status(201).json({message: 'user created', data: saved });
                 });
             });
         });
@@ -66,30 +66,77 @@ module.exports = function (router) {
                         return res.status(500).json({message: 'server error', data: null});
                     }
                     if (!user) {
-                        return res.stats(404).json({message: 'user not found', data: null});
+                        return res.status(404).json({message: 'user not found', data: null});
                     }
-                    return res.stats(200).json({message: 'success', data: null});
+                    return res.status(200).json({message: 'success', data: user });
                 });
             })
             .put(function (req, res) {
                 var id = req.params.id;
                 var name = req.body.name;
-            var email = req.body.email;
-            var pendingTasks = req.body.pendingTasks || [];
+                var email = req.body.email;
+                var pendingTasks = req.body.pendingTasks || [];
 
-            if (!name || !email) {
-                return res.status(400).json({ message: 'username and email are required', data: null });
-            }
-            if (!Array.isArray(pendingTasks)) {
-                pendingTasks = [pendingTasks];
-            }
-            User.findOne({ email: email, _id: { $ne: id } }, function (err, otherUser) {
-                if (err) {
-                    return res.status(500).json({ message: 'server error', data: null });
+                if (!name || !email) {
+                    return res.status(400).json({ message: 'username and email are required', data: null });
                 }
-                if (otherUser) {
-                    return res.status(400).json({message: 'user with this email exists', data: null});
+                if (!Array.isArray(pendingTasks)) {
+                    pendingTasks = [pendingTasks];
                 }
+                User.findOne({ email: email, _id: { $ne: id } }, function (err, otherUser) {
+                    if (err) {
+                        return res.status(500).json({ message: 'server error', data: null });
+                    }
+                    if (otherUser) {
+                        return res.status(400).json({message: 'user with this email exists', data: null});
+                    }
+                    User.findById(id, function (err, user) {
+                        if (err) {
+                            return res.status(500).json({ message: 'server error', data: null });
+                        }
+                        if (!user) {
+                            return res.status(404).json({ message: 'user not found', data: null });
+                        }
+
+                        user.name = name;
+                        user.email = email;
+                        user.pendingTasks = pendingTasks.map(String);
+
+                        Task.updateMany(
+                            { assignedUser: id },
+                            { $set: { assignedUser: '', assignedUserName: 'unassigned' } },
+                            function (err) {
+                                if (err) {
+                                    return res.status(500).json({ message: 'server error', data: null });
+                                }
+
+                                Task.updateMany(
+                                    { _id: { $in: user.pendingTasks } },
+                                    { $set: { assignedUser: id, assignedUserName: name } },
+                                    function (err) {
+                                        if (err) {
+                                            return res.status(500).json({ message: 'server error', data: null });
+                                        }
+
+                                        user.save(function (err, updatedUser) {
+                                            if (err) {
+                                                return res.status(500).json({ message: 'server error', data: null });
+                                            }
+                                            return res.status(200).json({
+                                                message: 'success',
+                                                data: updatedUser
+                                            });
+                                        });
+                                    }
+                                );
+                            }
+                        );
+                    });
+                });
+            })
+            .delete(function (req, res) {
+                var id = req.params.id;
+
                 User.findById(id, function (err, user) {
                     if (err) {
                         return res.status(500).json({ message: 'server error', data: null });
@@ -97,11 +144,6 @@ module.exports = function (router) {
                     if (!user) {
                         return res.status(404).json({ message: 'user not found', data: null });
                     }
-
-                    user.name = name;
-                    user.email = email;
-                    user.pendingTasks = pendingTasks.map(String);
-
                     Task.updateMany(
                         { assignedUser: id },
                         { $set: { assignedUser: '', assignedUserName: 'unassigned' } },
@@ -110,61 +152,19 @@ module.exports = function (router) {
                                 return res.status(500).json({ message: 'server error', data: null });
                             }
 
-                            Task.updateMany(
-                                { _id: { $in: user.pendingTasks } },
-                                { $set: { assignedUser: id, assignedUserName: name } },
-                                function (err) {
-                                    if (err) {
-                                        return res.status(500).json({ message: 'server error', data: null });
-                                    }
-
-                                    user.save(function (err, updatedUser) {
-                                        if (err) {
-                                            return res.status(500).json({ message: 'server error', data: null });
-                                        }
-                                        return res.status(200).json({
-                                            message: 'success',
-                                            data: updatedUser
-                                        });
-                                    });
+                            user.deleteOne(function (err) {
+                                if (err) {
+                                    return res.status(500).json({ message: 'server error', data: null });
                                 }
-                            );
+                                return res.status(200).json({
+                                    message: 'user deleted success',
+                                    data: null
+                                });
+                            });
                         }
                     );
                 });
             });
-        })
-        .delete(function (req, res) {
-            var id = req.params.id;
 
-            User.findById(id, function (err, user) {
-                if (err) {
-                    return res.status(500).json({ message: 'server error', data: null });
-                }
-                if (!user) {
-                    return res.status(404).json({ message: 'user not found', data: null });
-                }
-                Task.updateMany(
-                    { assignedUser: id },
-                    { $set: { assignedUser: '', assignedUserName: 'unassigned' } },
-                    function (err) {
-                        if (err) {
-                            return res.status(500).json({ message: 'server error', data: null });
-                        }
-
-                        user.deleteOne(function (err) {
-                            if (err) {
-                                return res.status(500).json({ message: 'server error', data: null });
-                            }
-                            return res.status(200).json({
-                                message: 'user deleted success',
-                                data: null
-                            });
-                        });
-                    }
-                );
-            });
-        });
-
-    return router;
-};
+        return router;
+    };
